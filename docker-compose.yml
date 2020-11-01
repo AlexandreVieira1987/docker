@@ -1,0 +1,71 @@
+version: '3'
+volumes:
+  dados:
+networks:
+  banco:
+  web:
+  fila:
+services:
+  db:
+    image: postgres:9.6
+    volumes:
+      - dados:/var/lib/postgresql/data
+      # copia a pasta scripts para dentro do container com o nome scripts
+      - ./scripts:/scripts
+      # copia o arquivo init.sql para o container
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+    #rede banco
+    networks:
+      - banco
+      #variável de ambiente
+    environment:
+      POSTGRES_HOST_AUTH_METHOD : trust
+
+  frontend:
+    image: nginx:1.13
+    volumes:
+    #site
+      - ./web:/usr/share/nginx/html
+    # Copia a config do proxy reverso para dentro do container
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    ports:
+    - 80:80
+    networks:
+      - web
+
+    # Dependencias do serviço frontend, caso seja inicialiado somente o serviço frontend, será inicializado o serviço
+    # app pois é um dependencia do frontend.
+    depends_on:
+      - app
+
+  app:
+    image: python:3.6
+    volumes:
+    # backend
+      - ./app:/app
+    working_dir: /app
+    command: bash ./app.sh
+    networks:
+      - banco
+      - web
+      - fila
+    depends_on:
+      - db
+      - queue
+
+  queue:
+    image: redis:3.2
+    networks:
+      - fila
+
+  worker:
+    build: worker
+    volumes:
+      - ./worker:/worker
+    working_dir: /worker
+    command: worker.py
+    networks:
+      - fila
+    depends_on:
+      - queue
